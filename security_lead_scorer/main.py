@@ -1,14 +1,16 @@
 """CLI entry point for Security Lead Scorer."""
 
+import asyncio
 import csv
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 import tldextract
 
+from .config import DEFAULT_CONCURRENCY, DEFAULT_RATE_LIMIT, CACHE_DIR, CACHE_TTL
 from .scanner import (
     check_ssl,
     check_headers,
@@ -20,6 +22,7 @@ from .scanner import (
 )
 from .scoring import get_grade, get_temperature
 from .output import format_table, format_json, export_to_csv, generate_talking_points
+from .utils import ScanCache, run_bulk_scans
 
 app = typer.Typer(
     name="security-leads",
@@ -182,6 +185,21 @@ def scan_bulk(
         "-v",
         help="Show progress for each domain",
     ),
+    concurrency: int = typer.Option(
+        DEFAULT_CONCURRENCY,
+        "--concurrency",
+        help="Number of concurrent scans",
+    ),
+    use_cache: bool = typer.Option(
+        False,
+        "--cache",
+        help="Use cache to skip recently scanned domains",
+    ),
+    cache_ttl: int = typer.Option(
+        CACHE_TTL,
+        "--cache-ttl",
+        help="Cache TTL in seconds (default: 86400 = 24 hours)",
+    ),
 ) -> None:
     """Scan multiple domains from a CSV file."""
     # Read domains from file
@@ -207,57 +225,79 @@ def scan_bulk(
     else:
         check_list = AVAILABLE_CHECKS
 
-    # Scan domains
+    # Validate and normalize domains first
+    valid_domains = []
+    for domain in domains:
+        normalized = validate_domain(domain)
+        if normalized:
+            valid_domains.append(normalized)
+        elif verbose:
+            console.print(f"[yellow]Skipping invalid domain: {domain}[/yellow]")
+
+    if not valid_domains:
+        console.print("[red]No valid domains after validation[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[cyan]Scanning {len(valid_domains)} valid domains (concurrency: {concurrency})...[/cyan]")
+
+    # Setup cache if enabled
+    cache = ScanCache(CACHE_DIR, cache_ttl) if use_cache else None
+    if use_cache:
+        console.print(f"[dim]Cache enabled (TTL: {cache_ttl}s)[/dim]")
+
+    # Create scan function with selected checks
+    def scan_domain(domain: str) -> dict:
+        return run_checks(domain, check_list)
+
+    # Run async bulk scan
     results = []
+    cached_count = 0
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("Scanning...", total=len(domains))
+        task = progress.add_task("Scanning...", total=len(valid_domains))
 
-        for domain in domains:
-            normalized = validate_domain(domain)
-            if not normalized:
-                if verbose:
-                    console.print(f"[yellow]Skipping invalid domain: {domain}[/yellow]")
-                progress.advance(task)
-                continue
-
-            if verbose:
-                progress.update(task, description=f"Scanning {normalized}...")
-
-            try:
-                result = run_checks(normalized, check_list)
-                results.append(result)
-
-                if verbose:
-                    grade = result["grade"]
-                    score = result["total_score"]
-                    console.print(f"  [dim]{normalized}[/dim]: {score}/100 (Grade {grade})")
-            except Exception as e:
-                if verbose:
-                    console.print(f"  [red]Error scanning {normalized}: {e}[/red]")
-                results.append({
-                    "domain": normalized,
-                    "error": str(e),
-                    "total_score": 0,
-                    "grade": "?",
-                    "temperature": "unknown",
-                    "checks": {},
-                    "issues": [f"Scan error: {e}"],
-                    "talking_points": [],
-                })
-
+        def on_progress(domain: str, result: dict | None, error: Exception | None):
+            nonlocal cached_count
             progress.advance(task)
+
+            if result and result.get("from_cache"):
+                cached_count += 1
+                if verbose:
+                    console.print(f"  [dim]{domain}[/dim]: [cyan](cached)[/cyan]")
+            elif verbose:
+                if error:
+                    console.print(f"  [red]Error: {domain}: {error}[/red]")
+                elif result:
+                    grade = result.get("grade", "?")
+                    score = result.get("total_score", 0)
+                    console.print(f"  [dim]{domain}[/dim]: {score}/100 (Grade {grade})")
+
+        # Run the async scan
+        results = asyncio.run(
+            run_bulk_scans(
+                domains=valid_domains,
+                scan_func=scan_domain,
+                concurrency=concurrency,
+                rate_limit=DEFAULT_RATE_LIMIT,
+                cache=cache,
+                on_progress=on_progress,
+            )
+        )
 
     console.print(f"\n[green]Completed scanning {len(results)} domains[/green]")
 
     # Summary stats
     if results:
-        grades = [r.get("grade", "?") for r in results]
         hot_leads = sum(1 for r in results if r.get("temperature") in ("hot", "on_fire"))
         console.print(f"[cyan]Hot leads: {hot_leads}/{len(results)}[/cyan]")
+        if cached_count > 0:
+            console.print(f"[dim]From cache: {cached_count}[/dim]")
 
     # Output
     if output:
@@ -271,7 +311,8 @@ def scan_bulk(
             score = result.get("total_score", 0)
             grade = result.get("grade", "?")
             temp = result.get("temperature", "?")
-            console.print(f"  {domain}: {score}/100 (Grade {grade}, {temp})")
+            cached = " [cyan](cached)[/cyan]" if result.get("from_cache") else ""
+            console.print(f"  {domain}: {score}/100 (Grade {grade}, {temp}){cached}")
 
         if len(results) > 10:
             console.print(f"  ... and {len(results) - 10} more")
