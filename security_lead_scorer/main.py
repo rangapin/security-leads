@@ -5,7 +5,15 @@ import typer
 from rich.console import Console
 import tldextract
 
-from .scanner import check_ssl, check_headers, check_redirects
+from .scanner import (
+    check_ssl,
+    check_headers,
+    check_redirects,
+    check_dns,
+    check_cms,
+    check_ports,
+    check_cookies,
+)
 from .output import format_table, format_json
 
 app = typer.Typer(
@@ -15,7 +23,7 @@ app = typer.Typer(
 )
 console = Console()
 
-AVAILABLE_CHECKS = ["ssl", "headers", "redirects"]
+AVAILABLE_CHECKS = ["ssl", "headers", "redirects", "dns", "cms", "ports", "cookies"]
 
 
 def validate_domain(domain: str) -> str | None:
@@ -56,6 +64,30 @@ def run_checks(domain: str, checks: list[str]) -> dict:
         results["checks"]["redirects"] = redirects_result
         results["total_score"] += redirects_result.get("score", 0)
         results["issues"].extend(redirects_result.get("issues", []))
+
+    if "dns" in checks:
+        dns_result = check_dns(domain)
+        results["checks"]["dns"] = dns_result
+        results["total_score"] += dns_result.get("score", 0)
+        results["issues"].extend(dns_result.get("issues", []))
+
+    if "cms" in checks:
+        cms_result = check_cms(domain)
+        results["checks"]["cms"] = cms_result
+        results["total_score"] += cms_result.get("score", 0)
+        results["issues"].extend(cms_result.get("issues", []))
+
+    if "ports" in checks:
+        ports_result = check_ports(domain)
+        results["checks"]["ports"] = ports_result
+        results["total_score"] += ports_result.get("score", 0)
+        results["issues"].extend(ports_result.get("issues", []))
+
+    if "cookies" in checks:
+        cookies_result = check_cookies(domain)
+        results["checks"]["cookies"] = cookies_result
+        results["total_score"] += cookies_result.get("score", 0)
+        results["issues"].extend(cookies_result.get("issues", []))
 
     # Cap score at 100
     results["total_score"] = min(100, results["total_score"])

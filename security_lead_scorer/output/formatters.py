@@ -143,6 +143,88 @@ def format_table(results: dict, console: Console) -> None:
         console.print(Panel(redirect_table, title="[bold]Redirects[/bold]", border_style="dim"))
         console.print()
 
+    # DNS details
+    if "dns" in checks:
+        dns_data = checks["dns"]
+        dns_table = Table(show_header=False, box=None, padding=(0, 2))
+        dns_table.add_column("Key", style="dim")
+        dns_table.add_column("Value")
+
+        dns_table.add_row("SPF Record", _bool_display(dns_data.get("spf", {}).get("present")))
+        dns_table.add_row("DMARC Record", _bool_display(dns_data.get("dmarc", {}).get("present")))
+
+        dkim_selectors = dns_data.get("dkim_selectors_found", [])
+        if dkim_selectors:
+            dns_table.add_row("DKIM Selectors", ", ".join(dkim_selectors))
+        else:
+            dns_table.add_row("DKIM Selectors", "[dim]None found[/dim]")
+
+        email_security = dns_data.get("overall_email_security", "unknown")
+        security_colors = {"excellent": "green", "good": "green", "basic": "yellow", "poor": "red"}
+        color = security_colors.get(email_security, "dim")
+        dns_table.add_row("Email Security", f"[{color}]{email_security}[/{color}]")
+
+        console.print(Panel(dns_table, title="[bold]DNS Security[/bold]", border_style="dim"))
+        console.print()
+
+    # CMS details
+    if "cms" in checks:
+        cms_data = checks["cms"]
+        if cms_data.get("cms_detected"):
+            cms_table = Table(show_header=False, box=None, padding=(0, 2))
+            cms_table.add_column("Key", style="dim")
+            cms_table.add_column("Value")
+
+            cms_table.add_row("CMS", cms_data.get("cms_detected"))
+            cms_table.add_row("Version", str(cms_data.get("cms_version") or "Unknown"))
+            cms_table.add_row("Latest", str(cms_data.get("latest_version") or "N/A"))
+
+            if cms_data.get("is_outdated"):
+                cms_table.add_row("Status", "[red]Outdated[/red]")
+            else:
+                cms_table.add_row("Status", "[green]Up to date[/green]")
+
+            if cms_data.get("exposed_files"):
+                cms_table.add_row("Exposed Files", ", ".join(cms_data["exposed_files"]))
+
+            console.print(Panel(cms_table, title="[bold]CMS Detection[/bold]", border_style="dim"))
+            console.print()
+
+    # Port scan details
+    if "ports" in checks:
+        ports_data = checks["ports"]
+        open_ports = ports_data.get("open_ports", [])
+        if open_ports:
+            ports_table = Table(show_header=False, box=None, padding=(0, 2))
+            ports_table.add_column("Key", style="dim")
+            ports_table.add_column("Value")
+
+            for port in open_ports:
+                port_info = ports_data.get("port_details", {}).get(port, {})
+                service = port_info.get("service", "Unknown")
+                severity = port_info.get("severity", "unknown")
+                color = SEVERITY_COLORS.get(severity, "white")
+                ports_table.add_row(f"Port {port}", f"[{color}]{service} ({severity})[/{color}]")
+
+            console.print(Panel(ports_table, title="[bold]Open Ports[/bold]", border_style="dim"))
+            console.print()
+
+    # Cookie details
+    if "cookies" in checks:
+        cookies_data = checks["cookies"]
+        if cookies_data.get("cookies_found", 0) > 0:
+            cookies_table = Table(show_header=False, box=None, padding=(0, 2))
+            cookies_table.add_column("Key", style="dim")
+            cookies_table.add_column("Value")
+
+            cookies_table.add_row("Cookies Found", str(cookies_data.get("cookies_found", 0)))
+            cookies_table.add_row("Without Secure", str(cookies_data.get("cookies_without_secure", 0)))
+            cookies_table.add_row("Without HttpOnly", str(cookies_data.get("cookies_without_httponly", 0)))
+            cookies_table.add_row("Without SameSite", str(cookies_data.get("cookies_without_samesite", 0)))
+
+            console.print(Panel(cookies_table, title="[bold]Cookies[/bold]", border_style="dim"))
+            console.print()
+
 
 def format_json(results: dict, console: Console) -> None:
     """Format and print results as JSON."""

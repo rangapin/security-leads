@@ -19,7 +19,11 @@ security-leads/
 │   │   ├── __init__.py
 │   │   ├── ssl_checker.py            # SSL/TLS certificate analysis
 │   │   ├── header_checker.py         # HTTP security headers
-│   │   └── redirect_checker.py       # HTTPS redirect and mixed content
+│   │   ├── redirect_checker.py       # HTTPS redirect and mixed content
+│   │   ├── dns_checker.py            # SPF, DKIM, DMARC verification
+│   │   ├── cms_detector.py           # CMS and version detection
+│   │   ├── port_scanner.py           # Risky open port detection
+│   │   └── cookie_checker.py         # Cookie security flags
 │   └── output/
 │       ├── __init__.py
 │       └── formatters.py             # Rich table and JSON output
@@ -57,18 +61,19 @@ Each scanner module (`scanner/*.py`) returns a dict with:
 - SSL: No SSL +30, Expired +25, Expiring <7d +20, TLS 1.0/1.1 +15
 - Headers: Missing CSP/HSTS +10 each, X-Frame-Options +8, X-Content-Type-Options +5
 - Redirects: No HTTPS redirect +15, 302 instead of 301 +5, mixed content +10
+- DNS: No SPF +10, No DMARC +10, No DKIM +5, weak SPF +5
+- CMS: 2+ versions behind +20, 1 version behind +10, version unknown +5
+- Ports: Exposed database (MySQL/PostgreSQL/MongoDB) +25, Telnet +20, RDP +20
+- Cookies: Missing Secure +5, Missing HttpOnly +5, Missing SameSite +3
 
 ## Tech Stack
 - **CLI**: typer + rich
 - **HTTP**: httpx
 - **HTML parsing**: beautifulsoup4
 - **Domain validation**: tldextract
+- **DNS queries**: dnspython
 
 ## Planned Features (see docs.md)
-- DNS checker (SPF, DKIM, DMARC)
-- CMS detector
-- Port scanner
-- Cookie checker
 - Bulk scanning with async
 - Rate limiting and caching
 - CSV export
