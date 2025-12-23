@@ -225,6 +225,16 @@ def format_table(results: dict, console: Console) -> None:
             console.print(Panel(cookies_table, title="[bold]Cookies[/bold]", border_style="dim"))
             console.print()
 
+    # Talking points
+    talking_points = results.get("talking_points", [])
+    if talking_points:
+        tp_text = Text()
+        for i, point in enumerate(talking_points, 1):
+            tp_text.append(f"{i}. ", style="bold cyan")
+            tp_text.append(f"{point}\n")
+        console.print(Panel(tp_text, title="[bold]Talking Points for Outreach[/bold]", border_style="green"))
+        console.print()
+
 
 def format_json(results: dict, console: Console) -> None:
     """Format and print results as JSON."""

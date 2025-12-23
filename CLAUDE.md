@@ -24,9 +24,15 @@ security-leads/
 │   │   ├── cms_detector.py           # CMS and version detection
 │   │   ├── port_scanner.py           # Risky open port detection
 │   │   └── cookie_checker.py         # Cookie security flags
+│   ├── scoring/
+│   │   ├── __init__.py
+│   │   └── calculator.py             # Score aggregation and grading
 │   └── output/
 │       ├── __init__.py
-│       └── formatters.py             # Rich table and JSON output
+│       ├── formatters.py             # Rich table and JSON output
+│       ├── csv_export.py             # CSV export for bulk results
+│       └── talking_points.py         # Outreach talking points generator
+├── tests/                            # pytest test suite (98 tests)
 └── docs.md                           # Full project specification
 ```
 
@@ -36,10 +42,18 @@ security-leads/
 # Install in development mode
 pip install -e .
 
-# Run CLI
+# Run tests
+pytest tests/ -v
+
+# Run CLI - single domain
 security-leads scan example.com
 security-leads scan example.com --checks ssl,headers
 security-leads scan example.com --format json
+security-leads scan example.com --output results.csv
+
+# Run CLI - bulk scanning
+security-leads scan-bulk domains.csv --output results.csv
+security-leads scan-bulk domains.csv --checks ssl,headers,dns -v
 ```
 
 ## Architecture
@@ -73,8 +87,7 @@ Each scanner module (`scanner/*.py`) returns a dict with:
 - **Domain validation**: tldextract
 - **DNS queries**: dnspython
 
-## Planned Features (see docs.md)
-- Bulk scanning with async
+## Planned Features (Phase 4)
+- Async bulk scanning for improved performance
 - Rate limiting and caching
-- CSV export
-- Talking points generator
+- PyPI packaging
